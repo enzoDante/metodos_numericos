@@ -10,9 +10,10 @@ class CalcErroArredondamento:
         self.intervaloFim = 0.0       # Intervalo final
         self.trapezios = 0            # Quantidade de trapézios
         self.casasDecimais = 0        # Casas decimais desejada
-        self.altura = 0               # Usada para calcular altura
         self.calculo = 0              # Somatório das áreas do trapézio
         self.fatorAltura = 0          # Altura dos trapézios
+        self.erroArredondamento = 0   # Erro de arredondamento
+        self.erroTruncamento = 0      # Erro de truncamento
         self.tabela = ""              # Tabela com os valores de x dentro do intervalo citado e com a função
         self.receberDadosdoProblema() # Função para usuário inserir os dados de entrada
         self.calculoTrap()            # Função para calcular a altura dos trapézio
@@ -24,6 +25,27 @@ class CalcErroArredondamento:
         expr = sp.sympify(expressao)  # Interpreta a string como expressão simbólica
         funcao = sp.lambdify(x, expr, modules='numpy')
         return funcao, expr
+    
+    def calcularMaxSegundaDerivada(self, expr, a:float, b:float):
+        x = sp.symbols('x')
+        segunda_derivada = sp.diff(expr, x, 2) # Segunda derivada de f(x)
+        # mod_segunda_derivada = sp.diff(segunda_derivada, x, 2) # Módulo da segunda derivada
+        modulo = sp.Abs(segunda_derivada)
+
+        # derivada do módulo |f''(x)|'
+        derivada_modulo = sp.diff(modulo, x) # Derivada do módulo da segunda derivada
+        try:
+            pontos_criticos = sp.solve(derivada_modulo, x) # Encontrar os pontos críticos da derivada do módulo
+            pontos_criticos = [
+                float(p.evalf()) for p in pontos_criticos if p.is_real and a <= float(p.evalf()) <= b
+            ]
+        except:
+            pontos_criticos = []
+        candidatos = [a, b] + pontos_criticos # Candidatos a máximos da segunda derivada
+        # avalia |f''(x)| em cada candidato e retorna o maior
+        f_modulo = sp.lambdify(x, modulo, modules='numpy')
+        maior_valor = max(abs(f_modulo(p)) for p in candidatos)
+        return maior_valor
 
     def receberDadosdoProblema(self):
         # Usuário deve digitar os dados de entrada desejado
@@ -70,8 +92,8 @@ class CalcErroArredondamento:
     
     def calculoTrap(self):
         # Função para calcular a altura dos trapézio
-        self.altura = self.intervaloFim - self.intervaloInicio
-        self.fatorAltura = self.altura / self.trapezios
+        altura = self.intervaloFim - self.intervaloInicio
+        self.fatorAltura = altura / self.trapezios
         print(f"\nA altura de cada Trapézio (eixo X) consiste na razão entre a diferença \ndos valores do intervalo e o número de trapézios declarado!\n")
 
     def criarTabela(self):
@@ -97,7 +119,7 @@ class CalcErroArredondamento:
         print("\nTABELA DE VALORES DE X E f(X):\n")
         print(self.tabela)
     
-    def calcErroArred(self):
+    def calcSomaErroIntervalo(self):
         valores_X = []
         self.calculo = 0
         valores_X.append(self.intervaloInicio) # Adiciona inicio do intervalo em valores_X[]
@@ -111,31 +133,50 @@ class CalcErroArredondamento:
         for i in range(0, self.trapezios+1): # Somatório das áreas dos trapézios
             if i == 0 or i == self.trapezios:
                 self.calculo += (valores_Fx[i] / 2)
-                print(f"{valores_Fx[i]:.{self.casasDecimais}f}/2", end="")
+                print(f"{valores_Fx[i]:.{self.casasDecimais}f}/2", end="") # O primeiro e o último termo da soma devem ser divididos por 2, pois são os extremos do intervalo
             else:
                 self.calculo += valores_Fx[i]
-                print(f"{valores_Fx[i]:.{self.casasDecimais}f}", end="")
+                print(f"{valores_Fx[i]:.{self.casasDecimais}f}", end="") # Os termos intermediários são somados normalmente
             if i < self.trapezios:
                 print(" + ", end="")
         print(")", end="")
         print(f" = {self.calculo:.{self.casasDecimais}f} * {self.fatorAltura:.{self.casasDecimais}f}", end="")
-        self.calculo *= self.fatorAltura
+        
+        # Multiplica o somatório pelo fator de altura para obter a área total aproximada sob a curva
+        self.calculo *= self.fatorAltura 
         print(f" = {self.calculo:.{self.casasDecimais}f}\n")
         vlArred = 0.5 * math.pow(10, -self.casasDecimais) # Valor de arredondamento para calcular o erro
-        erroArredondamento = self.trapezios * vlArred * self.fatorAltura # Erro de arredondamento
+        self.erroArredondamento = self.trapezios * vlArred * self.fatorAltura # Erro de arredondamento
 
         print("ERRO DE ARREDONDAMENTO: ")
-        print(f"\n|Ea| <= {self.trapezios} * {vlArred:.{self.casasDecimais+1}f} * {self.fatorAltura:.{self.casasDecimais}f} <= |{erroArredondamento:.{self.casasDecimais+1}f}|\n")
+        print(f"\n|Ea| <= {self.trapezios} * {vlArred:.{self.casasDecimais+1}f} * {self.fatorAltura:.{self.casasDecimais}f} <= |{self.erroArredondamento:.{self.casasDecimais+1}f}|\n")
 
+    def calcErroTruncamento(self):
+        # Esta função é para calcular o erro de truncamento, mas ainda não foi implementada
+        valor = self.calcularMaxSegundaDerivada(self.expr, self.intervaloInicio, self.intervaloFim)
+        a = self.intervaloInicio
+        b = self.intervaloInicio + self.fatorAltura
+        self.erroTruncamento = (((b-a)**3 / 12) * valor) * self.trapezios
+        print(f"\nERRO DE TRUNCAMENTO:\n|Etru| <= ((({b} - {a})^3)/12) * {valor} * {self.trapezios} = {self.erroTruncamento:.{self.casasDecimais+1}f}\n")
+    
+    def calcErroTotal(self):
+        erro_total = self.erroArredondamento + self.erroTruncamento
+        print(f"\nERRO TOTAL: \n|Etotal| <= |Ea| + |Etru| < {self.erroArredondamento:.{self.casasDecimais+1}f} + {self.erroTruncamento:.{self.casasDecimais+1}f} = {erro_total:.{self.casasDecimais+1}f}\n")
+    
+    def intervalos(self):
         print("INTERVALO DA RESPOSTA:")
-        print(f"\n{self.calculo:.{self.casasDecimais}f} - {erroArredondamento:.{self.casasDecimais+1}f} <= I <= {self.calculo:.{self.casasDecimais}f} + {erroArredondamento:.{self.casasDecimais+1}f}\n")
-        print(f"Representação em colchetes: [{self.calculo - erroArredondamento:.{self.casasDecimais}f}; {self.calculo + erroArredondamento:.{self.casasDecimais}f}]\n")
-        print(f"Representação em parênteses: ({self.calculo:.{self.casasDecimais}f}+-{erroArredondamento:.{self.casasDecimais+1}f})\n")
+        print(f"\n{self.calculo:.{self.casasDecimais}f} - {self.erroArredondamento:.{self.casasDecimais+1}f} <= I <= {self.calculo:.{self.casasDecimais}f} + {self.erroArredondamento:.{self.casasDecimais+1}f}\n")
+        print(f"Representação em colchetes: [{self.calculo - self.erroArredondamento:.{self.casasDecimais}f}; {self.calculo + self.erroArredondamento:.{self.casasDecimais}f}]\n")
+        print(f"Representação em parênteses: ({self.calculo:.{self.casasDecimais}f}+-{self.erroArredondamento:.{self.casasDecimais+1}f})\n")
 
     def saida(self):
         self.criarTabela()
 
         print("\nSOMA DAS ÁREAS DOS TRAPÉZIOS: ")
-        self.calcErroArred()
+        self.calcSomaErroIntervalo()
+
+        self.calcErroTruncamento()
+        self.calcErroTotal()
+        self.intervalos()
 
 CalcErroArredondamento()
